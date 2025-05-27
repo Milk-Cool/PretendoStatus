@@ -135,6 +135,7 @@ if(!fs.existsSync("recent.json"))
         "friends": [new Date(0), new Date(0)],
         "splatoon": [new Date(0), new Date(0)],
         "mk8": [new Date(0), new Date(0)],
+        "smm": [new Date(0), new Date(0)],
         "minecraft": [new Date(0), new Date(0)],
         "pikmin3": [new Date(0), new Date(0)],
         "wiiuchat": [new Date(0), new Date(0)],
@@ -219,34 +220,12 @@ const checkAll = async () => {
 checkAll();
 setInterval(checkAll, min * 60 * 1000);
 
-const getStatusText = status => status
-    ? "good"
-    : "bad";
-const getDateText = last => {
-    if(last == null) return `No downtime recorded`
-    const startTimestamp = new Date(last[0]);  // Convert the first timestamp to Date
-    const endTimestamp = new Date(last[1]);    // Convert the second timestamp to Date
-
-    const timeDiff = endTimestamp - startTimestamp; // Difference in milliseconds
-    const totalMinutes = Math.round(timeDiff / 60000); // Convert milliseconds to minutes
-
-    const hours = Math.floor(totalMinutes / 60);  // Full hours
-    const minutes = totalMinutes % 60;  // Remaining minutes after full hours
-
-    return Number(last[0]) == 0
-    ? "No downtime recorded"
-    : Number(last[1]) == 0
-    ? `Since ${startTimestamp.toUTCString()}`
-    : hours > 0
-    ? `Last down ${endTimestamp.toUTCString()} (${hours} hours ${minutes} minutes)`
-    : `Last down ${endTimestamp.toUTCString()} (${minutes} minutes)`;
-}
-app.get("/api/check/:service", (req, res) => {
-    const { service } = req.params;
-    if(!(service in status)) return res.status(404).end("not found");
-    console.log(last);
+app.get("/api/check", (req, res) => {
     res.status(200)
-        .end(getStatusText(status[service]) + "\n" + getDateText(last[service]));
+        .set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+        .set('Pragma', 'no-cache')
+        .json({status: status, times: last})
+        .end();
 });
 
 app.use(express.static("html/"));
