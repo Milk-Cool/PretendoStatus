@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "jest",
-    "start": "node server.js"
+    "start": "node server.js",
+    "start-dotenv": "node --env-file=./.env server.js"
   },
   "repository": {
     "type": "git",
@@ -24,7 +25,7 @@
   },
   "homepage": "https://github.com/Milk-Cool/PretendoStatus#readme",
   "dependencies": {
-    "express": "^5.0.0",
-    "node-calls-python": "^1.10.0"
+    "express": "^5.1.0",
+    "node-calls-python": "^1.11"
   }
 }
