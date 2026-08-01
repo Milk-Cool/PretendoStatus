@@ -7,8 +7,13 @@ from nintendo import nnas, nasc
 from nintendo.nex import backend, settings
 from nintendo.nex.authentication import AuthenticationInfo
 from dns import resolver
+from datetime import datetime, timedelta
 logging.basicConfig(level=logging.INFO)
 
+access_token_3ds = None
+access_token_3ds_expire = datetime.now()
+nex_token = None
+nex_token_expire = datetime.now()
 
 @async_to_sync
 async def checkWiiU(DEVICE_ID, SERIAL_NUMBER, SYSTEM_VERSION, REGION_ID, _COUNTRY_ID, _REGION_NAME, COUNTRY_NAME,
@@ -17,13 +22,24 @@ async def checkWiiU(DEVICE_ID, SERIAL_NUMBER, SYSTEM_VERSION, REGION_ID, _COUNTR
     if GAME_SERVER_ID is None:
         GAME_SERVER_ID = TITLE_ID & 0xFFFFFFFF
     try:
-        nas = nnas.NNASClient()
-        nas.set_device(DEVICE_ID, SERIAL_NUMBER, SYSTEM_VERSION, CERT)
-        nas.set_title(TITLE_ID, TITLE_VERSION)
-        nas.set_locale(REGION_ID, COUNTRY_NAME, LANGUAGE)
+        global nex_token, nex_token_expire
+        s = settings.default()
+        s.configure(ACCESS_KEY, NEX_VERSION)
+        if datetime.now() >= nex_token_expire:
+            print("Expired token. Regenerating...")
+            print(datetime.now())
+            print(nex_token_expire)
+            nas = nnas.NNASClient()
+            nas.set_device(DEVICE_ID, SERIAL_NUMBER,
+                           SYSTEM_VERSION, CERT)
+            nas.set_title(TITLE_ID, TITLE_VERSION)
+            nas.set_locale(REGION_ID, COUNTRY_NAME, LANGUAGE)
 
-        access_token = await nas.login(USERNAME, PASSWORD)
-        nex_token = await nas.get_nex_token(access_token.token, GAME_SERVER_ID)
+            access_token = await nas.login(USERNAME, PASSWORD, "hash")
+
+            nex_token_expire = datetime.now() + timedelta(hours=1) # Ratelimit
+            nex_token = await nas.get_nex_token(access_token.token, GAME_SERVER_ID)
+            print("Token regenerated")
 
         s = settings.default()
         s.configure(ACCESS_KEY, NEX_VERSION)
@@ -147,20 +163,28 @@ async def check3DS(
         LANGUAGE, DEVICE_CERT, DEVICE_NAME, PID, PID_HMAC, NEX_PASSWORD, TITLE_ID,
         TITLE_VERSION, ACCESS_KEY, NEX_VERSION, GAME_SERVER_ID: int = None
 ):
+    global access_token_3ds, access_token_3ds_expire
     if GAME_SERVER_ID is None:
         GAME_SERVER_ID = TITLE_ID & 0xFFFFFFFF
     try:
+        if datetime.now() >= access_token_3ds_expire:
+            print("Expired token. Regenerating...")
+            nas = nasc.NASCClient()
+            nas.set_title(TITLE_ID, TITLE_VERSION)
+            nas.set_device(SERIAL_NUMBER, MAC_ADDRESS, bytes.fromhex(DEVICE_CERT), DEVICE_NAME)
+            nas.set_locale(REGION_ID, LANGUAGE)
+            nas.set_user(PID, PID_HMAC)
 
-        nas = nasc.NASCClient()
-        nas.set_title(TITLE_ID, TITLE_VERSION)
-        nas.set_device(SERIAL_NUMBER, MAC_ADDRESS, bytes.fromhex(DEVICE_CERT), DEVICE_NAME)
-        nas.set_locale(REGION_ID, LANGUAGE)
-        nas.set_user(PID, PID_HMAC)
+            access_token_3ds_expire = datetime.now() + timedelta(hours=1) # Ratelimit
+            access_token_3ds = await nas.login(GAME_SERVER_ID, DEVICE_NAME)
+            if access_token_3ds is not None:
+                print("Token regenerated successfully.")
+            else:
+                print("Token regeneration failed.")
 
-        response = await nas.login(GAME_SERVER_ID, DEVICE_NAME)
         s = settings.default()
         s.configure(ACCESS_KEY, NEX_VERSION)
-        async with backend.connect(s, response.host, response.port) as be:
+        async with backend.connect(s, access_token_3ds.host, access_token_3ds.port) as be:
             be.login(str(PID), base64.b64decode(NEX_PASSWORD).decode("utf-8"))
             return True
 
@@ -333,7 +357,7 @@ def acnl(
                     31001)
 
 def sssl():
-    r = resolver.Resolver()
+    r = resolver.Resolver(configure=False)
     r.nameservers = ['88.198.140.154']
     try:
         answers = r.resolve("account.nintendo.net", "A")
